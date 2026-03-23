@@ -1,6 +1,11 @@
+# datasets
+datA.RData
+datB.RData
+
 # History files
 .Rhistory
 .Rapp.history
+.DS_Store
 
 # Session Data files
 .RData
