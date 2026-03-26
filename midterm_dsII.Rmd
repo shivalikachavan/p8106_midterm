@@ -1,0 +1,175 @@
+---
+title: "midterm_dsII"
+output: html_document
+date: "2026-03-25"
+---
+
+```{r setup, include=FALSE}
+library(tidymodels)
+library(caret)
+library(pls)
+library(earth)
+library(mgcv)
+library(splines)
+```
+
+Load, clean, and prepare dataset A for creating potential predictive models. 
+
+```{r}
+load("data/datA.RData")
+str(datA)
+
+# converting categorical variables into factors, as described in the assignment table 
+
+datA$menopause <- factor(datA$menopause)
+datA$race <- factor(datA$race)
+datA$tumor_grade <- factor(datA$tumor_grade)
+datA$stage <- factor(datA$stage)
+datA$surgery <- factor(datA$surgery)
+datA$chemo <- factor(datA$chemo)
+datA$hormonal_therapy <- factor(datA$hormonal_therapy)
+datA$ER <- factor(datA$ER)
+datA$PR <- factor(datA$PR)
+datA$HER2 <- factor(datA$HER2)
+
+# removing id since it isnt predictive 
+datA <- datA[, -which(names(datA) == "id")]
+
+# splitting data into training and testing for model training 
+
+set.seed(1)
+dat_split <- initial_split(datA, prop = 0.8)
+trainData <- training(dat_split)
+testData <- testing(dat_split)
+
+```
+
+fitting lm, knn, enet with 10 fold cv
+
+```{r}
+# Using 10 fold cross validation for model comparison 
+set.seed(1)
+folds <- createFolds(trainData$log_PFS, k = 10)
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+
+# Linear regression
+
+set.seed(1)
+fit.lm <- train(log_PFS ~ .,
+                data = trainData,
+                method = "lm",
+                trControl = ctrl)
+
+# K-nearest neighbors
+
+set.seed(1)
+fit.knn <- train(log_PFS ~ .,
+                 data = trainData,
+                 method = "knn",
+                 preProcess = c("center", "scale"),
+                 tuneGrid = expand.grid(k = 1:25),
+                 trControl = ctrl)
+
+# Grabbing best params 
+fit.knn$bestTune
+
+# Elastic net 
+
+set.seed(1)
+fit.enet <- train(log_PFS ~ .,
+                  data = trainData,
+                  method = "glmnet",
+                  tuneGrid = expand.grid(
+                    alpha = seq(0, 1, length = 11),
+                    lambda = exp(seq(-5, 2, length = 50))
+                  ),
+                  trControl = ctrl)
+
+# Grabbing best params 
+fit.enet$bestTune
+
+```
+
+now fitting pls, pcr, gam, mars 
+
+```{r}
+# Prepare matrices
+x_train <- model.matrix(log_PFS ~ ., trainData)[, -1]
+y_train <- trainData$log_PFS
+x_test <- model.matrix(log_PFS ~ ., testData)[, -1]
+y_test <- testData$log_PFS
+
+set.seed(1)
+pcr_model <- train(
+  log_PFS ~ .,
+  data = trainData,
+  method = "pcr",
+  preProcess = c("center", "scale"),
+  trControl = ctrl,
+  tuneLength = 20
+)
+
+set.seed(1)
+pls_model <- train(
+  log_PFS ~ .,
+  data = trainData,
+  method = "pls",
+  preProcess = c("center", "scale"),
+  trControl = ctrl,
+  tuneLength = 20
+)
+
+# GAM
+set.seed(1)
+gam_model <- train(log_PFS ~ .,
+                   data = trainData,
+                   method = "gam",
+                   trControl = ctrl)
+pred_gam <- predict(gam_model, newdata = testData)
+postResample(pred_gam, y_test)
+
+# MARS
+set.seed(1)
+mars_model <- train(log_PFS ~ .,
+                    data = trainData,
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:3, nprune = 2:15),
+                    trControl = ctrl)
+pred_mars <- predict(mars_model, newdata = testData)
+postResample(pred_mars, y_test)
+
+all_models <- resamples(list(
+  LM = fit.lm,
+  KNN = fit.knn,
+  ENET = fit.enet,
+  PCR = pcr_model,
+  PLS = pls_model,
+  GAM = gam_model,
+  MARS = mars_model
+))
+
+summary(all_models, metric = "RMSE")
+bwplot(all_models, metric = "RMSE")
+
+# evaluating test predictions
+
+predictions <- list(
+  LM = predict(fit.lm, testData),
+  KNN = predict(fit.knn, testData),
+  ENET = predict(fit.enet, testData),
+  PCR = predict(pcr_model, testData),
+  PLS = predict(pls_model, testData),
+  MARS = predict(mars_model, testData),
+  GAM = predict(gam_model, testData)
+)
+
+# Post-resample RMSE on test set
+test_rmse <- sapply(predictions, function(pred) postResample(pred, testData$log_PFS)[["RMSE"]])
+test_rmse
+```
+
+We used repeated 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split.Based on the repeated 10-fold cross-validated RMSE comparison across seven candidate models—Linear Regression (LM), K-Nearest Neighbors (KNN), Elastic Net (ENET), Principal Component Regression (PCR), Partial Least Squares (PLS), Generalized Additive Models (GAM), and Multivariate Adaptive Regression Splines (MARS) we observed that most models performed very similarly, with mean RMSE values ranging from 0.6899 (GAM) to 0.7119 (KNN). GAM achieved the lowest RMSE, indicating a slight benefit from modeling nonlinear trends, while KNN under-performed, likely due to high dimensionality and/or predominantly linear relationships in the data. The similar performance across linear and nonlinear models suggests that the relationship between predictors and log(PFS) is largely linear.We specified an explicit lambda grid to ensure consistent tuning, as default glmnet grids may vary across folds. PCR and PLS produced results nearly identical to LM and ENET, suggesting that dimensionality reduction provided little additional predictive power. Elastic Net, while marginally less accurate than GAM, offers the advantage of regularization and sparsity (alpha=0.9, so behaves similar to lasso), improving interpretability by selecting the most relevant predictors and reducing overfitting. Overall, the small differences in RMSE imply that the underlying relationship between predictors and progression-free survival is largely linear, and model choice has limited impact on predictive accuracy, allowing selection based on interpretability and clinical relevance rather than performance alone.
+
+test rmse tells us gam very slightly better than enet, but both the two best, difference not too big. (good predictive performance)
+
+since interpretability is important, ENET might be preferable because it explicitly shows which predictors are retained and their coefficients.
