@@ -50,7 +50,10 @@ fitting lm, knn, enet with 10 fold cv
 # Using 10 fold cross validation for model comparison 
 set.seed(1)
 folds <- createFolds(trainData$log_PFS, k = 10)
-ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 5,
+                     index = folds)
 
 # Linear regression
 
@@ -166,10 +169,14 @@ predictions <- list(
 # Post-resample RMSE on test set
 test_rmse <- sapply(predictions, function(pred) postResample(pred, testData$log_PFS)[["RMSE"]])
 test_rmse
+
+coef(fit.enet$finalModel, fit.enet$bestTune$lambda)
 ```
 
-We used repeated 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split.Based on the repeated 10-fold cross-validated RMSE comparison across seven candidate models—Linear Regression (LM), K-Nearest Neighbors (KNN), Elastic Net (ENET), Principal Component Regression (PCR), Partial Least Squares (PLS), Generalized Additive Models (GAM), and Multivariate Adaptive Regression Splines (MARS) we observed that most models performed very similarly, with mean RMSE values ranging from 0.6899 (GAM) to 0.7119 (KNN). GAM achieved the lowest RMSE, indicating a slight benefit from modeling nonlinear trends, while KNN under-performed, likely due to high dimensionality and/or predominantly linear relationships in the data. The similar performance across linear and nonlinear models suggests that the relationship between predictors and log(PFS) is largely linear.We specified an explicit lambda grid to ensure consistent tuning, as default glmnet grids may vary across folds. PCR and PLS produced results nearly identical to LM and ENET, suggesting that dimensionality reduction provided little additional predictive power. Elastic Net, while marginally less accurate than GAM, offers the advantage of regularization and sparsity (alpha=0.9, so behaves similar to lasso), improving interpretability by selecting the most relevant predictors and reducing overfitting. Overall, the small differences in RMSE imply that the underlying relationship between predictors and progression-free survival is largely linear, and model choice has limited impact on predictive accuracy, allowing selection based on interpretability and clinical relevance rather than performance alone.
+Warning: Some resampling iterations for the elastic net model produced missing performance values, likely due to numerical instability at extreme tuning parameter values. However, the majority of resamples were valid, and the selected tuning parameters were stable.
 
-test rmse tells us gam very slightly better than enet, but both the two best, difference not too big. (good predictive performance)
+We used repeated 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split.Based on the repeated 10-fold cross-validated RMSE comparison across seven candidate models—Linear Regression, K-Nearest Neighbors , Elastic Net, Principal Component Regression, Partial Least Squares , Generalized Additive Models, and Multivariate Adaptive Regression Splines we observed that most models performed very similarly, with mean RMSE values ranging from 0.6900 (GAM) to 0.7117 (KNN). GAM achieved the lowest RMSE, indicating a slight benefit from modeling nonlinear trends, while KNN under-performed, likely due to high dimensionality and/or predominantly linear relationships in the data. The similar performance across linear and nonlinear models suggests that the relationship between predictors and log(PFS) is largely linear. We specified an explicit lambda grid to ensure consistent tuning, as default glmnet grids may vary across folds. PCR and PLS produced results nearly identical to LM and ENET, suggesting that dimensionality reduction provided little additional predictive power. Elastic Net, while marginally less accurate than GAM, offers the advantage of regularization and sparsity (alpha=1, so behaves like to lasso), improving interpretability by selecting the most relevant predictors and reducing overfitting. Overall, the small differences in RMSE imply that the underlying relationship between predictors and progression-free survival is largely linear, and model choice has limited impact on predictive accuracy, allowing selection based on interpretability and clinical relevance rather than performance alone.
 
-since interpretability is important, ENET might be preferable because it explicitly shows which predictors are retained and their coefficients.
+test rmse tells us mars is slightly better than gam, which is very slightly better than enet, but the difference not too big. (good predictive performance)
+
+since interpretability is important, ENET is preferable because it explicitly shows which predictors are retained and their coefficients, sparser than pure LM, and good rmse and predictive power. Spare because lasso, and interpretable, which is important for our data context. 
