@@ -1,10 +1,10 @@
 ---
 title: "midterm_dsII"
-output: html_document
+output: pdf_document
 date: "2026-03-25"
 ---
 
-```{r setup, include=FALSE}
+```{r setup}
 library(tidymodels)
 library(caret)
 library(pls)
@@ -19,21 +19,27 @@ Load, clean, and prepare dataset A for creating potential predictive models.
 load("data/datA.RData")
 str(datA)
 
+# checking for any NAs in data 
+
+colSums(is.na(datA)) 
+
 # converting categorical variables into factors, as described in the assignment table 
 
-datA$menopause <- factor(datA$menopause)
-datA$race <- factor(datA$race)
-datA$tumor_grade <- factor(datA$tumor_grade)
-datA$stage <- factor(datA$stage)
-datA$surgery <- factor(datA$surgery)
-datA$chemo <- factor(datA$chemo)
-datA$hormonal_therapy <- factor(datA$hormonal_therapy)
-datA$ER <- factor(datA$ER)
-datA$PR <- factor(datA$PR)
-datA$HER2 <- factor(datA$HER2)
-
-# removing id since it isnt predictive 
-datA <- datA[, -which(names(datA) == "id")]
+datA = 
+  datA |> 
+  mutate(
+    menopause = factor(menopause),
+    race = factor(race),
+    tumor_grade = factor(tumor_grade),
+    stage = factor(stage),
+    surgery = factor(surgery),
+    chemo = factor(chemo),
+    hormonal_therapy = factor(hormonal_therapy),
+    ER = factor(ER),
+    PR = factor(PR),
+    HER2 = factor(HER2)
+  ) |> 
+  select(-id) # removing id since it isnt predictive 
 
 # splitting data into training and testing for model training 
 
@@ -77,7 +83,6 @@ fit.knn <- train(log_PFS ~ .,
 fit.knn$bestTune
 
 # Elastic net 
-
 set.seed(1)
 fit.enet <- train(log_PFS ~ .,
                   data = trainData,
@@ -140,7 +145,11 @@ mars_model <- train(log_PFS ~ .,
                     trControl = ctrl)
 pred_mars <- predict(mars_model, newdata = testData)
 postResample(pred_mars, y_test)
+```
 
+comparing all models
+
+```{r}
 all_models <- resamples(list(
   LM = fit.lm,
   KNN = fit.knn,
@@ -169,7 +178,10 @@ predictions <- list(
 # Post-resample RMSE on test set
 test_rmse <- sapply(predictions, function(pred) postResample(pred, testData$log_PFS)[["RMSE"]])
 test_rmse
+```
 
+Final Coefficients: 
+```{r}
 coef(fit.enet$finalModel, fit.enet$bestTune$lambda)
 ```
 
