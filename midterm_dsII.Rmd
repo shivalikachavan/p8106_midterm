@@ -11,33 +11,55 @@ library(pls)
 library(earth)
 library(mgcv)
 library(splines)
+library(corrplot)
+library(car)
+library(patchwork)
 ```
 
 Load, clean, and prepare dataset A for creating potential predictive models. 
 
 ```{r}
 load("data/datA.RData")
-str(datA)
+summary(datA)
 
 # checking for any NAs in data 
 
 colSums(is.na(datA)) 
 
+# Select only numeric columns for the matrix
+numeric_data = datA |> select(where(is.numeric))
+
+# Calculate and plot
+cor_matrix = cor(numeric_data, use = "complete.obs")
+corrplot(cor_matrix, method = "circle", type = "upper")
+```
+
+There are a few correlated variables, which intuitively make sense:
+
+  * `tumor_size`, `lymph_nodes`, and `stage` are highly positively correlated
+  * `age` and `menopause` are positively correlated
+  * `Ki67` (measures how fast cancer cells in a tumor are dividing) and `tumor_grade` (how abnormal cancer cells look) are positively correlated
+  * `Ki67` and `ER` (estrogen receptor) are negatively correlated
+  * `PR` (progesterone receptor) and `ER` are positively correlated
+  * `hormonal_therapy` and `ER` are positively correlated
+
+
+```{r}
 # converting categorical variables into factors, as described in the assignment table 
 
 datA = 
   datA |> 
   mutate(
-    menopause = factor(menopause),
-    race = factor(race),
-    tumor_grade = factor(tumor_grade),
-    stage = factor(stage),
-    surgery = factor(surgery),
-    chemo = factor(chemo),
-    hormonal_therapy = factor(hormonal_therapy),
-    ER = factor(ER),
-    PR = factor(PR),
-    HER2 = factor(HER2)
+    menopause = factor(menopause, levels = c("0", "1")),
+    race = factor(race, levels = c("1", "2", "3", "4")),
+    tumor_grade = factor(tumor_grade, levels = c("1", "2", "3")),
+    stage = factor(stage, levels = c("1", "2", "3")),
+    surgery = factor(surgery, levels = c("0", "1")),
+    chemo = factor(chemo, levels = c("0", "1")),
+    hormonal_therapy = factor(hormonal_therapy, levels = c("0", "1")),
+    ER = factor(ER, levels = c("0", "1")),
+    PR = factor(PR, levels = c("0", "1")),
+    HER2 = factor(HER2, levels = c("0", "1"))
   ) |> 
   select(-id) # removing id since it isnt predictive 
 
@@ -47,8 +69,30 @@ set.seed(1)
 dat_split <- initial_split(datA, prop = 0.8)
 trainData <- training(dat_split)
 testData <- testing(dat_split)
-
 ```
+
+Calculating VIF on training data to see if the correlations observed earlier are multicollinear:
+```{r}
+# Fit a standard linear model first
+vif_model = lm(log_PFS ~ ., data = trainData)
+
+# Calculate VIF
+vif(vif_model)
+```
+
+No variables are multicollinear, so all can be kept in models. 
+
+Checking for interactions:
+```{r}
+p1 = ggplot(trainData, aes(x = tumor_size, y = log_PFS, color = stage)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE) 
+
+p2 = ggplot(trainData, aes(x = age, y = log_PFS, color = menopause)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE) 
+```
+It looks like age/menopause and tumor size/cancer stage have an interaction. When we run the MARS model, we can take a closer look at these interactions. 
 
 fitting lm, knn, enet with 10 fold cv
 
@@ -95,7 +139,6 @@ fit.enet <- train(log_PFS ~ .,
 
 # Grabbing best params 
 fit.enet$bestTune
-
 ```
 
 now fitting pls, pcr, gam, mars 
@@ -133,8 +176,6 @@ gam_model <- train(log_PFS ~ .,
                    data = trainData,
                    method = "gam",
                    trControl = ctrl)
-pred_gam <- predict(gam_model, newdata = testData)
-postResample(pred_gam, y_test)
 
 # MARS
 set.seed(1)
@@ -143,11 +184,9 @@ mars_model <- train(log_PFS ~ .,
                     method = "earth",
                     tuneGrid = expand.grid(degree = 1:3, nprune = 2:15),
                     trControl = ctrl)
-pred_mars <- predict(mars_model, newdata = testData)
-postResample(pred_mars, y_test)
 ```
 
-comparing all models
+comparing all models training RMSE
 
 ```{r}
 all_models <- resamples(list(
@@ -160,8 +199,17 @@ all_models <- resamples(list(
   MARS = mars_model
 ))
 
-summary(all_models, metric = "RMSE")
+# Extract just the RMSE statistics matrix
+rmse_matrix <- summary(all_models, metric = "RMSE")$statistics$RMSE
+cv_means <- rmse_matrix[, "Mean"]
+best_model_name <- names(cv_means)[which.min(cv_means)]
+best_model_rmse <- min(cv_means)
+worst_model_name <- names(cv_means)[which.max(cv_means)]
+worst_model_rmse <- max(cv_means)
+
+rmse_matrix |> knitr::kable()
 bwplot(all_models, metric = "RMSE")
+cv_rmse = summary(all_models)$statistics$RMSE[, "Mean"]
 
 # evaluating test predictions
 
@@ -177,18 +225,37 @@ predictions <- list(
 
 # Post-resample RMSE on test set
 test_rmse <- sapply(predictions, function(pred) postResample(pred, testData$log_PFS)[["RMSE"]])
-test_rmse
+
+# summarize RMSE in table
+model_comparison = tibble(
+  model = names(test_rmse),
+  cv_rmse = cv_rmse,
+  test_rmse = test_rmse
+  ) |> 
+  arrange(test_rmse) 
+model_comparison |> knitr::kable(digits = 3)
 ```
 
 Final Coefficients: 
 ```{r}
-coef(fit.enet$finalModel, fit.enet$bestTune$lambda)
+enet_coefs = coef(fit.enet$finalModel, fit.enet$bestTune$lambda) |> as.matrix()
+
+enet_coefs_clean = tibble(
+  predictor = rownames(enet_coefs),
+  coefficient = enet_coefs[, 1]
+  ) |> 
+  arrange(desc(abs(coefficient)))
+
+enet_coefs_clean |> knitr::kable(digits = 3)
 ```
 
 Warning: Some resampling iterations for the elastic net model produced missing performance values, likely due to numerical instability at extreme tuning parameter values. However, the majority of resamples were valid, and the selected tuning parameters were stable.
 
-We used repeated 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split.Based on the repeated 10-fold cross-validated RMSE comparison across seven candidate models—Linear Regression, K-Nearest Neighbors , Elastic Net, Principal Component Regression, Partial Least Squares , Generalized Additive Models, and Multivariate Adaptive Regression Splines we observed that most models performed very similarly, with mean RMSE values ranging from 0.6900 (GAM) to 0.7117 (KNN). GAM achieved the lowest RMSE, indicating a slight benefit from modeling nonlinear trends, while KNN under-performed, likely due to high dimensionality and/or predominantly linear relationships in the data. The similar performance across linear and nonlinear models suggests that the relationship between predictors and log(PFS) is largely linear. We specified an explicit lambda grid to ensure consistent tuning, as default glmnet grids may vary across folds. PCR and PLS produced results nearly identical to LM and ENET, suggesting that dimensionality reduction provided little additional predictive power. Elastic Net, while marginally less accurate than GAM, offers the advantage of regularization and sparsity (alpha=1, so behaves like to lasso), improving interpretability by selecting the most relevant predictors and reducing overfitting. Overall, the small differences in RMSE imply that the underlying relationship between predictors and progression-free survival is largely linear, and model choice has limited impact on predictive accuracy, allowing selection based on interpretability and clinical relevance rather than performance alone.
+We used repeated 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split. We evaluated seven candidate models: Linear Regression, K-Nearest Neighbors, Elastic Net (ENET), Principal Component Regression (PCR), Partial Least Squares (PLS), Generalized Additive Models (GAM), and Multivariate Adaptive Regression Splines (MARS).
 
-test rmse tells us mars is slightly better than gam, which is very slightly better than enet, but the difference not too big. (good predictive performance)
+Based on the training data, most models performed very similarly, with mean RMSE values ranging from `r round(best_model_rmse, 4)` (`r best_model_name`) to `r round(worst_model_rmse, 4)` (`r worst_model_name`). The similar performance across linear and nonlinear models suggests that the relationship between the predictors and `log(PFS)` is largely linear.
 
-since interpretability is important, ENET is preferable because it explicitly shows which predictors are retained and their coefficients, sparser than pure LM, and good rmse and predictive power. Spare because lasso, and interpretable, which is important for our data context. 
+PLS achieved the lowest mean error, closely followed by PCR (Mean = `r round(cv_means[4], 4)`) and ENET (Mean = `r round(cv_means[3], 4)`). The fact that ENET and PCR performed so similarly to PLS suggests that dimensionality reduction provided little additional predictive power. ENET has the lowest maximum RMSE observed. With the exception of one outlier, the remaining RMSEs from cross-validation have a tight distribution, indicating this model is less variable and more stable. In addition, these results suggest that dimensionality reduction provided little additional predictive power.
+
+Because predictive accuracy was comparable across the top models, we prioritized interpretability. We selected the ENET model, which was trained using an explicit lambda grid to ensure consistent tuning across folds. The cross-validation process selected an alpha of 0, meaning the final model is a pure Ridge regression. While Ridge regression does not perform sparse feature selection (all variables are retained), it stabilizes the coefficients to handle multicollinearity, making it a highly robust and easily interpretable model for our clinical context. The reported test error for this ENET model was `r round(unname(test_rmse[3]), 4)`. 
+
