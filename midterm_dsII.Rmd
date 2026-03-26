@@ -3,8 +3,15 @@ title: "midterm_dsII"
 output: pdf_document
 date: "2026-03-25"
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  echo = TRUE
+)
+```
 
-```{r setup}
+```{r,echo=TRUE}
 library(tidymodels)
 library(caret)
 library(pls)
@@ -16,9 +23,11 @@ library(car)
 library(patchwork)
 ```
 
+## 1. Load, clean and EDA analysis
+
 Load, clean, and prepare dataset A for creating potential predictive models. 
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 load("data/datA.RData")
 summary(datA)
 
@@ -71,6 +80,7 @@ trainData <- training(dat_split)
 testData <- testing(dat_split)
 ```
 
+# 2. Fitting a linear model
 Calculating VIF on training data to see if the correlations observed earlier are multicollinear:
 ```{r}
 # Fit a standard linear model first
@@ -94,7 +104,9 @@ ggplot(trainData, aes(x = age, y = log_PFS, color = menopause)) +
 ```
 It looks like age/menopause and tumor size/cancer stage have an interaction. When we run the MARS model, we can take a closer look at these interactions. 
 
-fitting lm, knn, enet with 10 fold cv
+# 3. Fitting lm, knn, enet
+
+We employed 10 fold cv
 
 ```{r}
 # Using 10 fold cross validation for model comparison 
@@ -141,7 +153,7 @@ fit.enet <- train(log_PFS ~ .,
 fit.enet$bestTune
 ```
 
-now fitting pls, pcr, gam, mars 
+# 4. Fitting pls, pcr, gam, mars 
 
 ```{r}
 # Prepare matrices
@@ -186,7 +198,7 @@ mars_model <- train(log_PFS ~ .,
                     trControl = ctrl)
 ```
 
-comparing all models training RMSE
+# 5. Comparing all models training RMSE
 
 ```{r}
 all_models <- resamples(list(
@@ -207,7 +219,7 @@ best_model_rmse <- min(cv_means)
 worst_model_name <- names(cv_means)[which.max(cv_means)]
 worst_model_rmse <- max(cv_means)
 
-rmse_matrix |> knitr::kable()
+rmse_matrix |> knitr::kable(digits = 4)
 bwplot(all_models, metric = "RMSE")
 cv_rmse = summary(all_models)$statistics$RMSE[, "Mean"]
 
@@ -259,7 +271,7 @@ PLS achieved the lowest mean error, closely followed by PCR (Mean = `r round(cv_
 
 Because predictive accuracy was comparable across the top models, we prioritized interpretability. We selected the ENET model, which was trained using an explicit lambda grid to ensure consistent tuning across folds. The cross-validation process selected an alpha of 0, meaning the final model is a pure Ridge regression. While Ridge regression does not perform sparse feature selection (all variables are retained), it stabilizes the coefficients to handle multicollinearity, making it a highly robust and easily interpretable model for our clinical context. The reported test error for this ENET model was `r round(unname(test_rmse[3]), 4)`. 
 
-Load, clean, and prepare dataset B similar to A
+# 6. Load, clean, and prepare dataset B
 ```{r}
 load("data/datB.RData")
 summary(datB)
@@ -297,7 +309,7 @@ datB =
   select(-id) # removing id since it isnt predictive
 ```
 
-Running ENET model on B
+# 7. Testing ENET model on dataset B
 
 ```{r}
 enet_pred_B = predict(fit.enet, newdata = datB)
@@ -307,6 +319,7 @@ print(enet_test_rmse)
 
 When applying the final Elastic Net model (trained on datA) to the new cohort (datB), the RMSE increased to `r round(enet_test_rmse, 4)`. Compared to the previous test RMSE of `r round(unname(test_rmse[3]), 4)` on the original data, this indicates a drop in predictive performance. This gap suggests that there may be underlying distribution shifts between the two patient populations (e.g., differences in demographics, clinical settings, or unmeasured variables), or that the model slightly overfit the original cohort despite the use of Ridge regularization. A new model will be needed. Since ENET had a tight distribution when using the original data, it seems the most promising (rather than training many different models). Additionally, it is then easier to compare what changed in the model. 
 
+# 8. Trainning new model for dataset B
 
 ```{r}
 # splitting data into training and testing for model training 
