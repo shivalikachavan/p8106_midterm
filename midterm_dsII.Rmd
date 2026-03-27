@@ -29,18 +29,16 @@ Load, clean, and prepare dataset A for creating potential predictive models.
 
 ```{r, message=FALSE, warning=FALSE}
 load("data/datA.RData")
-summary(datA)
 
 # checking for any NAs in data 
-
 colSums(is.na(datA)) 
-
 # Select only numeric columns for the matrix
 numeric_data = datA |> select(where(is.numeric))
 
 # Calculate and plot
 cor_matrix = cor(numeric_data, use = "complete.obs")
 corrplot(cor_matrix, method = "circle", type = "upper")
+
 ```
 
 There are a few correlated variables, which intuitively make sense:
@@ -71,6 +69,7 @@ datA =
     HER2 = factor(HER2, levels = c("0", "1"))
   ) |> 
   select(-id) # removing id since it isnt predictive 
+
 
 # splitting data into training and testing for model training 
 
@@ -245,7 +244,7 @@ model_comparison = tibble(
   test_rmse = test_rmse
   ) |> 
   arrange(test_rmse) 
-model_comparison |> knitr::kable(digits = 3)
+model_comparison |> knitr::kable(digits = 3, caption = "RMSE comparison for tested models")
 ```
 
 Final Coefficients: 
@@ -258,7 +257,7 @@ enet_coefs_clean = tibble(
   ) |> 
   arrange(desc(abs(coefficient)))
 
-enet_coefs_clean |> knitr::kable(digits = 3)
+enet_coefs_clean |> knitr::kable(digits = 3, caption = "Elastic Net Coefficients")
 ```
 
 Warning: Some resampling iterations for the elastic net model produced missing performance values, likely due to numerical instability at extreme tuning parameter values. However, the majority of resamples were valid, and the selected tuning parameters were stable.
@@ -274,7 +273,7 @@ Because predictive accuracy was comparable across the top models, we prioritized
 # 6. Load, clean, and prepare dataset B
 ```{r}
 load("data/datB.RData")
-summary(datB)
+#summary(datB)
 
 # checking for any NAs in data 
 
@@ -307,6 +306,14 @@ datB =
     HER2 = factor(HER2, levels = c("0", "1"))
   ) |> 
   select(-id) # removing id since it isnt predictive
+
+# generate a summary table to compare both dataset
+tbl_A = datA |>
+  gtsummary::tbl_summary()
+tbl_B = datB|>
+  gtsummary::tbl_summary()
+gtsummary::tbl_merge(list(tbl_A, tbl_B),
+                     tab_spanner = c("Dataset A", "Dataset B"))
 ```
 
 # 7. Testing ENET model on dataset B
