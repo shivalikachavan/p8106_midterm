@@ -1,14 +1,17 @@
 ---
 title: "midterm_dsII"
 output: pdf_document
+header-includes:
+  - \usepackage{setspace}
+  - \onehalfspacing
+
 date: "2026-03-25"
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   message = FALSE,
   warning = FALSE,
-  echo = TRUE,
-  include = FALSE
+  echo = FALSE
 )
 ```
 
