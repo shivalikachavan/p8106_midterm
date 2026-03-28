@@ -1,9 +1,18 @@
 ---
-title: "midterm_dsII"
+title: "Prediction models for Progression-Free Survival in Breast Cancer Patients"
+author: Shivalika Chavan (sc5826), Kaveri Uberoy(kiu2103), Khue Nguyen (nnk2114)
 output: pdf_document
+fontsize: 12pt
+linestretch: 1.5
+mainfont: "Times New Roman"
+geometry: margin=1in
 header-includes:
-  - \usepackage{setspace}
-  - \onehalfspacing
+  - \usepackage{float}
+  - \floatplacement{table}{H}
+  - \floatplacement{figure}{H}
+  - \usepackage{array}
+  - \usepackage{longtable}
+  - \usepackage{booktabs}
 
 date: "2026-03-25"
 ---
@@ -17,7 +26,8 @@ knitr::opts_chunk$set(
 
 # 1. Introduction
 
-Two sets of data about the progression-free survival of breast cancer patients were provided, originating from two similar studies. Dataset A comprises data from 2000 patients collected between 1990 and 1995. Dataset B was subsequently collected from 2000 to 2005, utilizing an identical study design, sample size, and set of variables.
+Two sets of data about the progression-free survival of breast cancer patients were provided, originating from two similar studies. Dataset A comprises data from 2000 patients collected between 1990 and 1995. Dataset B was subsequently collected from 2000 to 2005, utilizing an identical study design, sample size, and set of variables.We built a prediction model for log-transformed PFS using the dataset A and evaluated the model’s generalization of this model to dataset B. 
+
 
 # 2. Method
 We cleaned both datasets and factorized the categorical variables including: menopause, race, tumor_grade, stage, surgery, chemo, hormonal_therapy, ER, PR and HER2. We explored the correlation of variables to determine multicollinearity by checking the correlation heatmap . We partitioned the dataset A into training (80%) and testing data (20%) and used repeated 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split. We evaluated seven candidate models: Linear Regression, K-Nearest Neighbors, Elastic Net (ENET), Principal Component Regression (PCR), Partial Least Squares (PLS), Generalized Additive Models (GAM), and Multivariate Adaptive Regression Splines (MARS). Modeling was done using R version 4.5.1. Packages included “tidymodels” for cleaning data, “car” for assessing variance inflation factors (VIF), “caret” and “splines” for model training, “pls” for partial least squares model, “earth” for MARS model, “patchwork” for plot layout. 
@@ -26,6 +36,8 @@ We cleaned both datasets and factorized the categorical variables including: men
 # 3. Results and discussion
 
 ## 3.1. Exploratory Data Analysis
+Both dataset A and dataset B each contained data of 2000 patients with complete follow-up and no missing values. There are 15 predictors, including 5 continuous and ten categorical. The sample characteristics are described in Table 1.
+
 Figure 1 showed the correlation between variables. There are a few correlated variables, which intuitively make sense:
 
   * `tumor_size`, `lymph_nodes`, and `stage` are highly positively correlated
@@ -52,7 +64,7 @@ By comparing the coefficients of the old pre-2000 model to the new 2000-2005 mod
 
 References
 
-```{r,echo=TRUE}
+```{r,echo=FALSE}
 library(tidymodels)
 library(caret)
 library(pls)
@@ -65,14 +77,17 @@ library(patchwork)
 ```
 
 
-```{r, message=FALSE, warning=FALSE}
+```{r}
 load("data/datA.RData")
 
 # checking for any NAs in data 
 #colSums(is.na(datA)) 
 # Select only numeric columns for the matrix
 numeric_data = datA |> select(where(is.numeric))
+```
 
+
+```{r, fig.cap = "Figure 1: Correlation matrix of variables for dataset A", fig.width=10, fig.height=8}
 # Calculate and plot
 cor_matrix = cor(numeric_data, use = "complete.obs")
 corrplot(cor_matrix, method = "circle", type = "upper")
@@ -96,10 +111,63 @@ datA =
     PR = factor(PR, levels = c("0", "1")),
     HER2 = factor(HER2, levels = c("0", "1"))
   ) |> 
-  select(-id) # removing id since it isnt predictive 
+  select(-id) # removing id since it isnt predictive
+```
+
+```{r}
+load("data/datB.RData")
+#summary(datB)
+
+# checking for any NAs in data 
+
+#colSums(is.na(datB)) 
+
+# Select only numeric columns for the matrix
+numeric_data_B = datB |> select(where(is.numeric))
+```
 
 
-# splitting data into training and testing for model training 
+```{r, fig.cap = "Figure 2: Correlation matrix of variables for dataset B", fig.width=10, fig.height=8}
+# Calculate and plot
+cor_matrix_B = cor(numeric_data_B, use = "complete.obs")
+corrplot(cor_matrix_B, method = "circle", type = "upper")
+```
+
+
+```{r}
+# converting categorical variables into factors, as described in the assignment table 
+
+datB = 
+  datB |> 
+  mutate(
+    menopause = factor(menopause, levels = c("0", "1")),
+    race = factor(race, levels = c("1", "2", "3", "4")),
+    tumor_grade = factor(tumor_grade, levels = c("1", "2", "3")),
+    stage = factor(stage, levels = c("1", "2", "3")),
+    surgery = factor(surgery, levels = c("0", "1")),
+    chemo = factor(chemo, levels = c("0", "1")),
+    hormonal_therapy = factor(hormonal_therapy, levels = c("0", "1")),
+    ER = factor(ER, levels = c("0", "1")),
+    PR = factor(PR, levels = c("0", "1")),
+    HER2 = factor(HER2, levels = c("0", "1"))
+  ) |> 
+  select(-id) # removing id since it isnt predictive
+```
+
+
+```{r, results='asis'}
+# generate a summary table to compare both dataset
+tbl_A = datA |>
+  gtsummary::tbl_summary()
+tbl_B = datB|>
+  gtsummary::tbl_summary()
+gtsummary::tbl_merge(list(tbl_A, tbl_B),
+                     tab_spanner = c("Dataset A", "Dataset B"))
+```
+
+
+```{r}
+# splitting dataset A into training and testing  for model training 
 
 set.seed(1)
 dat_split <- initial_split(datA, prop = 0.8)
@@ -118,15 +186,16 @@ vif(vif_model)|>
   knitr::kable(digits = 3, caption = "Table 1. Variance Inflation Factors (VIF)")
 ```
 
+```{r, fig.cap= "Figure 2: Interaction plot between tumor_size and stage, menopause and age", fig.width=10, fig.height=6}
 
-```{r}
-ggplot(trainData, aes(x = tumor_size, y = log_PFS, color = stage)) +
+plot1 = ggplot(trainData, aes(x = tumor_size, y = log_PFS, color = stage)) +
+    geom_point(alpha = 0.5) +
+geom_smooth(method = "lm", se = FALSE) 
+
+plot2 = ggplot(trainData, aes(x = age, y = log_PFS, color = menopause)) +
     geom_point(alpha = 0.5) +
     geom_smooth(method = "lm", se = FALSE) 
-
-ggplot(trainData, aes(x = age, y = log_PFS, color = menopause)) +
-    geom_point(alpha = 0.5) +
-    geom_smooth(method = "lm", se = FALSE) 
+plot1 + plot2
 ```
 
 
@@ -158,7 +227,7 @@ fit.knn <- train(log_PFS ~ .,
                  trControl = ctrl)
 
 # Grabbing best params 
-fit.knn$bestTune
+#fit.knn$bestTune
 
 # Elastic net 
 set.seed(1)
@@ -172,7 +241,7 @@ fit.enet <- train(log_PFS ~ .,
                   trControl = ctrl)
 
 # Grabbing best params 
-fit.enet$bestTune
+#fit.enet$bestTune
 ```
 
 
@@ -222,7 +291,7 @@ mars_model <- train(log_PFS ~ .,
 
 
 
-```{r}
+```{r,fig.cap="Figuge 2: RMSE of tested models", fig.width= 10, fig.height=8 }
 all_models <- resamples(list(
   LM = fit.lm,
   KNN = fit.knn,
@@ -244,7 +313,10 @@ worst_model_rmse <- max(cv_means)
 rmse_matrix |> knitr::kable(digits = 4)
 bwplot(all_models, metric = "RMSE")
 cv_rmse = summary(all_models)$statistics$RMSE[, "Mean"]
+```
 
+
+```{r}
 # evaluating test predictions
 
 predictions <- list(
@@ -267,11 +339,11 @@ model_comparison = tibble(
   test_rmse = test_rmse
   ) |> 
   arrange(test_rmse) 
-model_comparison |> knitr::kable(digits = 3, caption = "RMSE comparison for tested models")
+model_comparison |> knitr::kable(digits = 3, caption = "Table 3: RMSE comparison for tested models")
 ```
 
-Final Coefficients: 
-```{r}
+ 
+```{r final coefficients}
 enet_coefs = coef(fit.enet$finalModel, fit.enet$bestTune$lambda) |> as.matrix()
 
 enet_coefs_clean = tibble(
@@ -280,60 +352,16 @@ enet_coefs_clean = tibble(
   ) |> 
   arrange(desc(abs(coefficient)))
 
-enet_coefs_clean |> knitr::kable(digits = 3, caption = "Elastic Net Coefficients")
+enet_coefs_clean |> knitr::kable(digits = 3, caption = "Table 4: Elastic Net Coefficients")
 ```
 
 
-```{r}
-load("data/datB.RData")
-#summary(datB)
-
-# checking for any NAs in data 
-
-colSums(is.na(datB)) 
-
-# Select only numeric columns for the matrix
-numeric_data_B = datB |> select(where(is.numeric))
-
-# Calculate and plot
-cor_matrix_B = cor(numeric_data_B, use = "complete.obs")
-corrplot(cor_matrix_B, method = "circle", type = "upper")
-```
-
-
-```{r}
-# converting categorical variables into factors, as described in the assignment table 
-
-datB = 
-  datB |> 
-  mutate(
-    menopause = factor(menopause, levels = c("0", "1")),
-    race = factor(race, levels = c("1", "2", "3", "4")),
-    tumor_grade = factor(tumor_grade, levels = c("1", "2", "3")),
-    stage = factor(stage, levels = c("1", "2", "3")),
-    surgery = factor(surgery, levels = c("0", "1")),
-    chemo = factor(chemo, levels = c("0", "1")),
-    hormonal_therapy = factor(hormonal_therapy, levels = c("0", "1")),
-    ER = factor(ER, levels = c("0", "1")),
-    PR = factor(PR, levels = c("0", "1")),
-    HER2 = factor(HER2, levels = c("0", "1"))
-  ) |> 
-  select(-id) # removing id since it isnt predictive
-
-# generate a summary table to compare both dataset
-tbl_A = datA |>
-  gtsummary::tbl_summary()
-tbl_B = datB|>
-  gtsummary::tbl_summary()
-gtsummary::tbl_merge(list(tbl_A, tbl_B),
-                     tab_spanner = c("Dataset A", "Dataset B"))
-```
 
 
 ```{r}
 enet_pred_B = predict(fit.enet, newdata = datB)
 enet_test_rmse <- RMSE(pred = enet_pred_B, obs = datB$log_PFS)
-print(enet_test_rmse)
+#print(enet_test_rmse)
 ```
 
 
@@ -357,11 +385,11 @@ fit.enet.new <- train(log_PFS ~ .,
                       trControl = ctrl)
 
 # Grabbing best params 
-fit.enet.new$bestTune
+#fit.enet.new$bestTune
 
 enet_new_pred = predict(fit.enet.new, newdata = testData)
 enet_new_test_rmse <- RMSE(pred = enet_new_pred, obs = testData$log_PFS)
-print(enet_new_test_rmse)
+#print(enet_new_test_rmse)
 ```
 
 
@@ -373,7 +401,7 @@ coefs_old = tibble(
   coefficient = enet_old_coefs[, 1]) |> 
   arrange(desc(abs(coefficient))) 
 
-coefs_old |> knitr::kable(digits = 4)
+#coefs_old |> knitr::kable(digits = 4)
 
 enet_new_coefs = as.matrix(coef(fit.enet.new$finalModel, fit.enet.new$bestTune$lambda))
 
@@ -382,14 +410,14 @@ coefs_new = tibble(
   coefficient = enet_new_coefs[, 1]) |> 
   arrange(desc(abs(coefficient))) 
 
-coefs_new |> knitr::kable(digits = 4)
+#coefs_new |> knitr::kable(digits = 4, caption = "Table 5: Coefficients of new fitted model for dataset B")
 
 merged_coefs = 
   full_join(coefs_old, coefs_new, 
             by = "predictor", suffix = c("_old", "_new")) |> 
   mutate(difference = coefficient_old - coefficient_new)
 
-merged_coefs |> arrange(predictor)  |> knitr::kable(digits = 4)
+merged_coefs |> arrange(predictor)  |> knitr::kable(digits = 4, caption = "Table 5: Coefficients comparision of two ENET models")
 ```
 
 
