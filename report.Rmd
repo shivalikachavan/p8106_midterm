@@ -1,10 +1,12 @@
 ---
 title: "Prediction models for Progression-Free Survival in Breast Cancer Patients"
 author: Shivalika Chavan (sc5826), Kaveri Uberoy(kiu2103), Khue Nguyen (nnk2114)
-output: pdf_document
+output: 
+  pdf_document:
+      latex_engine: xelatex
+  mainfont: "Times New Roman"
 fontsize: 12pt
 linestretch: 1.5
-mainfont: "Times New Roman"
 geometry: margin=1in
 header-includes:
   - \usepackage{float}
@@ -23,6 +25,7 @@ knitr::opts_chunk$set(
   echo = FALSE
 )
 options(knitr.table.format = "latex")
+
 ```
 
 
@@ -32,7 +35,7 @@ Two sets of data about the progression-free survival of breast cancer patients w
 
 
 # 2. Method
-We cleaned both datasets and factorized the categorical variables including: menopause, race, tumor_grade, stage, surgery, chemo, hormonal_therapy, ER, PR and HER2. We explored the correlation of variables to determine multicollinearity by checking the correlation heatmap . We partitioned the dataset A into training (80%) and testing data (20%) and used repeated (n=5) 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split. We evaluated seven candidate models: Linear Regression, K-Nearest Neighbors, Elastic Net (ENET), Principal Component Regression (PCR), Partial Least Squares (PLS), Generalized Additive Models (GAM), and Multivariate Adaptive Regression Splines (MARS). Modeling was done using R version 4.5.1. Packages included “tidymodels” for cleaning data, “car” for assessing variance inflation factors (VIF), “caret” and “splines” for model training, “pls” for partial least squares model, “earth” for MARS model, “patchwork” for plot layout. 
+We cleaned both datasets and factorized the categorical variables by their specified levels including: menopause, race, tumor_grade, stage, surgery, chemo, hormonal_therapy, ER, PR and HER2. We checked for NAs in the data and removed the id variable as it was not predictive. We explored the correlation of variables to determine multicollinearity by checking the correlation heatmap . We set our seed as 1, and then randomly partitioned the dataset A into training (80%) and testing data (20%) using initial_split() and used repeated (n=5) 10-fold cross-validation to estimate out-of-sample prediction error. This approach repeatedly partitions the training data into training and validation sets, reducing variance compared to a single split. Cross-validation folds were explicitly created using createFolds() with k = 10 and reused across all models. We evaluated seven candidate models: Linear Regression, K-Nearest Neighbors, Elastic Net (ENET), Principal Component Regression (PCR), Partial Least Squares (PLS), Generalized Additive Models (GAM), and Multivariate Adaptive Regression Splines (MARS). For KNN, the tuning parameter k was evaluated over the range 1 to 25, and all predictors were pre-processed by centering and scaling prior to model fitting. For ENET, the mixing parameter alpha was tuned over a grid defined by seq(0,1,length=11), and the regularization parameter lambda was tuned over a grid defined by exp(seq(−5,2,length=50)). For MARS, the degree of interactions was tuned over the range 1 to 3, and the number of terms retained in the model (nprune) was tuned over the range 2 to 15.For GAM, the default tuning parameters provided by the caret package were used. For Principal Component Regression (PCR) and Partial Least Squares (PLS), the optimal number of components was selected using a tuning length of 20 within the cross-validation framework, and all predictors were preprocessed by centering and scaling prior to model fitting. Modeling was done using R version 4.5.1. Packages included “tidymodels” for cleaning data, “car” for assessing variance inflation factors (VIF), “caret” and “splines” for model training, “pls” for partial least squares model, “earth” for MARS model, “patchwork” for plot layout. 
 
 
 # 3. Results and discussion
@@ -51,9 +54,9 @@ Figure 1 and 2 show the correlation between variables in dataset A and B respect
 We checked variance inflation factors (VIF)  values to assess the multicollinearity. All adjusted GVIF values were less than 2.5, indicating no multicollinearity. The highest value was observed for tumor_size (2.17), suggesting moderate but acceptable correlation with other variables (stage and lymph node), see Table 2. Thus, all variables were included in the modelling.  
 
 ## 3.2. Model selection for dataset A
-Based on the training data, most models performed very similarly, with mean RMSE values ranging from 0.7054 (PLS) to 0.7542 (GAM). (see Table 3). The similar performance across linear and nonlinear models suggests that the relationship between the predictors and log(PFS) is largely linear. PLS achieved the lowest mean error (0.7054), closely followed by PCR (Mean = 0.7066) and ENET (Mean = 0.709). ENET and PCR performing similarly to PLS suggests that dimensionality reduction provided little additional predictive power. ENET has the lowest maximum RMSE observed. Except for one outlier, the remaining RMSEs from cross-validation have a tight distribution, indicating this model is less variable and more stable.
+The cross-validated RMSE for each model was computed as the mean RMSE across all resampling iterations. Based on the training data, most models performed very similarly, with mean RMSE values ranging from 0.7054 (PLS) to 0.7542 (GAM). (see Table 3). The similar performance across linear and nonlinear models suggests that the relationship between the predictors and log(PFS) is largely linear. PLS achieved the lowest mean error (0.7054), closely followed by PCR (Mean = 0.7066) and ENET (Mean = 0.709). ENET and PCR performing similarly to PLS suggests that dimensionality reduction provided little additional predictive power. ENET has the lowest maximum RMSE observed. Except for one outlier, the remaining RMSEs from cross-validation have a tight distribution, indicating this model is less variable and more stable.
 Because predictive accuracy was comparable across the top models, we prioritized interpretability. We selected the ENET model, which was trained using an explicit lambda grid to ensure consistent tuning across folds. The cross-validation process selected an alpha of 0, meaning the final model is a pure Ridge regression. While Ridge regression does not perform sparse feature selection (all variables are retained), it stabilizes the coefficients to handle multicollinearity, making it a highly robust and easily interpretable model for our
-clinical context. The coffecients for each variable of our selected model are shown in Table 4. The reported test error for this ENET model was 0.7445. (see Table 3)
+clinical context. The coeffecients for each variable of our selected model are shown in Table 4. The reported test error for this ENET model was 0.7445; test RMSE was calculated by comparing predicted and observed values of log(PFS) using the root mean squared error metric.
 
 ## 3.3.  Model testing and new model for dataset B
 ### 3.3.1. Model testing on dataset B
@@ -62,8 +65,9 @@ When applying the final Elastic Net model (trained on datA) to the new cohort (d
 ### 3.3.2. Train new model on dataset B
 Since ENET had a tight distribution when using the original data, it seems the most promising (rather than training many different models). Additionally, it is then easier to compare what changed in the model.By comparing the coefficients of the old pre-2000 model to the new 2000-2005 model (see Table 5), several major predictive shifts become clear. The new model's intercept increased from 2.55 to 3.03, indicating that the baseline PFS increased over the decade. This makes sense since new and better interventions will have likely been more accessible. The impact of HER2 status (`HER21`) has flipped. In the older cohort, being HER2+ was a severe negative predictor for progression-free survival (-0.101). In the new cohort, this penalty essentially vanished (+0.009). Other predictors that flipped were all race categories, `menopause1`, `stage2`, and `tumor_grade2`. Other variables including ER and hormonal therapy stayed largely the same and continued to improve PFS, while stage 3, tumor grade 3, and tumor size decreased PFS. The gap in predictive power makes sense given these changes in cohort trends (see Table 5).  
 
+\newpage
 
-References
+# Appendix
 
 ```{r,echo=FALSE}
 library(tidymodels)
@@ -166,7 +170,7 @@ summary_table <- gtsummary::tbl_merge(
   ),
   tab_spanner = c("Dataset A", "Dataset B")
 ) |>
-  gtsummary::modify_caption("Sample characteristics of Dataset A and Dataset B")
+  gtsummary::modify_caption("Sample characteristics of Dataset A and Dataset B.")
 ```
 
 
@@ -179,10 +183,12 @@ trainData <- training(dat_split)
 testData <- testing(dat_split)
 ```
 
+\newpage
+
 ```{r}
 
 summary_table |> 
-  kable(format = "latex", booktabs = TRUE, longtable = TRUE, caption = "Sample characteristics of Dataset A and Dataset B") |> 
+  kable(format = "latex", booktabs = TRUE, longtable = TRUE, caption = "Sample characteristics of Dataset A and Dataset B.") |> 
   kable_styling(latex_options = c("repeat_header"))
 
 # Fit a standard linear model first
@@ -320,7 +326,7 @@ best_model_rmse <- min(cv_means)
 worst_model_name <- names(cv_means)[which.max(cv_means)]
 worst_model_rmse <- max(cv_means)
 
-rmse_matrix |> knitr::kable(digits = 4)
+# rmse_matrix |> knitr::kable(digits = 4)
 bwplot(all_models, metric = "RMSE")
 cv_rmse = summary(all_models)$statistics$RMSE[, "Mean"]
 ```
@@ -345,12 +351,10 @@ test_rmse <- sapply(predictions, function(pred) postResample(pred, testData$log_
 # summarize RMSE in table
 model_comparison = tibble(
   model = names(test_rmse),
-  cv_rmse = cv_rmse,
-  test_rmse = test_rmse
-  ) |> 
-  arrange(test_rmse) 
-# table 2
-model_comparison |> knitr::kable(digits = 3, caption = "RMSE comparison for tested models")
+  cv_rmse = cv_rmse
+  ) 
+
+model_comparison |> knitr::kable(digits = 3, caption = "RMSE comparison for tested models.")
 ```
 
  
@@ -363,7 +367,7 @@ enet_coefs_clean = tibble(
   ) |> 
   arrange(desc(abs(coefficient)))
 # table 4
-enet_coefs_clean |> knitr::kable(digits = 3, caption = "Elastic Net Coefficients")
+enet_coefs_clean |> knitr::kable(digits = 3, caption = "Elastic Net Coefficients for Dataset A.")
 ```
 
 
@@ -425,10 +429,10 @@ coefs_new = tibble(
 
 merged_coefs = 
   full_join(coefs_old, coefs_new, 
-            by = "predictor", suffix = c("_old", "_new")) |> 
-  mutate(difference = coefficient_old - coefficient_new)
+            by = "predictor", suffix = c("_datasetA", "_datasetB")) |> 
+  mutate(difference = coefficient_datasetA - coefficient_datasetB)
 # table 5
-merged_coefs |> arrange(predictor)  |> knitr::kable(digits = 4, caption = "Coefficients comparision of two ENET models")
+merged_coefs |> arrange(predictor)  |> knitr::kable(digits = 4, caption = "Coefficients comparision of two ENET models.")
 ```
 
 
